@@ -1,0 +1,26 @@
+--- Python Virtual Environment ---
+
+Ignore the virtual environment folder (this is very important!)
+
+.venv/
+venv/
+*.venv/
+
+--- API Keys & Secrets ---
+
+Ignore the .env file that contains your GOOGLE_API_KEY
+
+.env
+
+--- Python Cache ---
+
+Ignore compiled Python files and cache folders
+
+pycache/
+*.pyc
+*.pyo
+*.pyd
+
+--- IDE Files (VS Code) ---
+
+.vscode/
