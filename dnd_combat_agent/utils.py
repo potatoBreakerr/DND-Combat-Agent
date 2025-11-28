@@ -35,10 +35,9 @@ async def call_agent(runner, user_id, session_id, user_input, session_service):
         import traceback
         traceback.print_exc()
         return [], None
-
 def show_battle_ground(size: list[int], rectangle_position: list[list[int]], environment_emoji: str, user_position: list[int], monster_position: list[int], monster_emoji: str):
     """
-    Prints the battleground to the terminal using emoji and special characters.
+    Prints the battleground to the terminal using emoji with 2-char width.
     
     Args:
         size: [rows, cols]
@@ -52,13 +51,11 @@ def show_battle_ground(size: list[int], rectangle_position: list[list[int]], env
     # Initialize grid with dots for normal ground
     grid = [[' .' for _ in range(cols)] for _ in range(rows)]
     
-    # Unpack special area coordinates
+    # Fill special terrain area
     if rectangle_position and len(rectangle_position) == 2:
         top_left = rectangle_position[0]
         bottom_right = rectangle_position[1]
         
-        # Fill special area
-        # Ensure indices are within bounds
         r_start = max(0, top_left[0])
         r_end = min(rows - 1, bottom_right[0])
         c_start = max(0, top_left[1])
@@ -68,12 +65,11 @@ def show_battle_ground(size: list[int], rectangle_position: list[list[int]], env
             for c in range(c_start, c_end + 1):
                 grid[r][c] = environment_emoji
 
-    # Place Entities (Last so they appear on top of environment)
-    # Monster
+    # Place Monster (overwrites terrain)
     if 0 <= monster_position[0] < rows and 0 <= monster_position[1] < cols:
         grid[monster_position[0]][monster_position[1]] = monster_emoji
         
-    # User 🧙‍♂️
+    # Place User (overwrites everything)
     if 0 <= user_position[0] < rows and 0 <= user_position[1] < cols:
         grid[user_position[0]][user_position[1]] = '🧙'
 
@@ -84,15 +80,16 @@ def show_battle_ground(size: list[int], rectangle_position: list[list[int]], env
     for r in range(rows):
         row_str = "".join(grid[r])
         print(f" {r}|{row_str}|")
-    print("  +" + "--" * cols + "+")
+    print("  +" + "--" * cols + "+\n")
+
 
 def create_character(_class: str):
     if _class == 'fighter':
         user_attributes = {
-            'hp': random.randint(9, 17),
+            'hp': random.randint(15, 25),
             'ac': 13,
             'speed': 2,
-            'damage': [4, 7],
+            'damage': [7, 10],
         }
         return user_attributes
     else:
@@ -107,9 +104,9 @@ def display_combat_state(user_attributes: dict, monster: dict, battleground: dic
         monster: Monster's attributes dictionary  
         battleground: Battleground state dictionary
     """
-    print("\n" + "="*50)
-    print("⚔️  COMBAT STATUS")
-    print("="*50)
+    print("-"*50)
+    print("COMBAT STATUS")
+    print("-"*50)
     
     # User status
     user_hp = user_attributes.get('hp', 0)
@@ -127,15 +124,17 @@ def display_combat_state(user_attributes: dict, monster: dict, battleground: dic
     
     # Distance
     distance = abs(user_pos[0] - monster_pos[0]) + abs(user_pos[1] - monster_pos[1])
-    print(f"\n📏 Distance: {distance} squares")
+    print(f"\nDistance: {distance} squares", end="")
     
     # Terrain info
     environment = battleground.get('environment', 'None')
     environment_emoji = battleground.get('environment_emoji', '')
-    if environment:
-        print(f"🌍 Special Terrain: {environment_emoji} {environment}")
+    if environment and environment != 'None':
+        print(f" | Terrain: {environment_emoji} {environment}")
+    else:
+        print()
     
-    print("="*50 + "\n")
+    print("-"*50 + "\n")
 
 def roll_dice(num_dice: int, dice_sides: int) -> int:
     """
