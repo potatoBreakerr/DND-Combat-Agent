@@ -2,6 +2,11 @@ from google.adk.agents import Agent, SequentialAgent
 from google.genai import types
 from google.adk.models.google_llm import Gemini
 from .output_schema import MonsterContent, BattlegroundContent
+from .dm_agent import dm_agent
+from .callbacks import (
+    before_agent_callback,
+    after_agent_callback,
+)
 
 
 retry_config=types.HttpRetryOptions(
@@ -27,6 +32,8 @@ theme_agent = Agent(
     IMPORTANT: Only output the background hook. DO NOT include any other text.
     """,
     output_key='theme',
+    before_agent_callback=before_agent_callback,
+    after_agent_callback=after_agent_callback,
 )
 
 monster_generator = Agent(
@@ -40,7 +47,7 @@ monster_generator = Agent(
     You are a Game Designer. Your task is to design a monster for a D&D combat based on a given background story.
     You need to decide the following attributes of a monster:
     - Name: The name of the monster, based on the background story.
-    - Monster Emoji: The emoji to represent the monster.
+    - Monster Emoji: The emoji to represent the monster. You can only use ONE emoji.
     - HP: The hit points of the monster. From 15 to 50.
     - AC: The armor class of the monster. From 1 to 20.
     - Damage: The attack damage range of the monster. It should be provided as a list of two integers. You can pick any interval in [1, 15].
@@ -61,6 +68,8 @@ monster_generator = Agent(
     """,
     output_key='monster',
     output_schema=MonsterContent,
+    before_agent_callback=before_agent_callback,
+    after_agent_callback=after_agent_callback,
 )
 
 bg_design_agent = Agent(
@@ -102,10 +111,79 @@ bg_design_agent = Agent(
     """,
     output_key='battleground',
     output_schema=BattlegroundContent,
+    before_agent_callback=before_agent_callback,
+    after_agent_callback=after_agent_callback,
 )
 
 bg_initializer = SequentialAgent(
     name='battle_ground_initializer',
     description='A pipeline to initialize a battle ground.',
     sub_agents=[theme_agent, monster_generator, bg_design_agent],
+    before_agent_callback=before_agent_callback,
+    after_agent_callback=after_agent_callback,
+)
+
+# Root routing agent that delegates to appropriate subagent
+root_agent = Agent(
+    name='root_agent',
+    description='Root agent that routes requests to initialization or combat agents.',
+    model=Gemini(
+        model='gemini-2.5-flash-lite',
+        retry_options=retry_config,
+    ),
+    instruction="""
+    You are the Root Agent for a D&D combat game. Your job is to intelligently route user requests to the appropriate subagent.
+    
+    ## Available Subagents
+    
+    1. **battle_ground_initializer**: Initializes a new battle
+       - Creates the background story/theme
+       - Generates the monster
+       - Designs the battleground
+       - Use this when: User wants to start a new game, generate a scenario, or initialize combat
+    
+    2. **dm_agent**: Manages ongoing combat
+       - Processes user combat actions (move, attack, etc.)
+       - Controls monster AI
+       - Manages turn-based combat
+       - Applies terrain effects
+       - Checks win/loss conditions
+       - Use this when: User is taking actions in an active battle
+    
+    ## Routing Logic
+    
+    **Route to battle_ground_initializer when:**
+    - User asks to "start", "begin", "initialize", or "create" a new battle/game
+    - User requests a "new scenario", "new theme", or "generate combat"
+    - The request is about setting up or generating the initial state
+    - Example phrases: "Generate a D&D combat theme", "Start a new battle", "Create a new scenario"
+    
+    **Route to dm_agent when:**
+    - User is performing a combat action: move, attack, defend, retreat
+    - User asks about battle status or wants to check information
+    - The request is about an ongoing battle/turn
+    - Example phrases: "move north", "attack the monster", "I attack", "check status"
+    
+    ## Decision Process
+    
+    1. **Analyze** the user's request carefully
+    2. **Determine** which subagent is appropriate
+    3. **Delegate** to that subagent by calling it
+    4. **Return** the subagent's response to the user
+    
+    ## Important Rules
+    
+    - If the request is ambiguous, default to dm_agent (assume combat is ongoing)
+    - Always delegate - never try to handle requests yourself
+    - Pass the user's request directly to the chosen subagent
+    - Let the subagents do their specialized work
+    
+    ## Response Format
+    
+    Simply pass through whatever the chosen subagent returns. Do not add your own commentary or explanations.
+    The subagent's response is the final response to the user.
+    """,
+    sub_agents=[bg_initializer, dm_agent],
+    before_agent_callback=before_agent_callback,
+    after_agent_callback=after_agent_callback,
 )
