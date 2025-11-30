@@ -1,0 +1,18 @@
+# D&D Combat Agent - Python Dependencies
+
+# Core Google AI SDK for agents and generative AI
+google-adk>=0.1.0
+google-generativeai>=0.8.0
+
+# Data validation and settings management
+pydantic>=2.0.0
+
+# Environment variable management
+python-dotenv>=1.0.0
+
+# Optional but recommended for better terminal output
+colorama>=0.4.6
+
+# For potential future enhancements
+# numpy>=1.24.0  # If adding advanced calculations
+# rich>=13.0.0   # For enhanced terminal UI

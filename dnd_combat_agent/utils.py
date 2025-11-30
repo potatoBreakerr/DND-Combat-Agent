@@ -1,9 +1,26 @@
+"""
+D&D Combat Agent - Utility Functions
+
+Provides helper functions for:
+- Agent communication and session management
+- Battleground grid display
+- Character creation
+- Combat status display
+"""
+
 from google.genai import types
 import random
 
 async def call_agent(runner, user_id, session_id, user_input, session_service):
     """
-    Calls an agent and returns both the response and the final session state.
+    Calls an agent and returns both the response and updated session state.
+    
+    Args:
+        runner: Agent runner instance
+        user_id: User identifier
+        session_id: Session identifier  
+        user_input: User's command or message
+        session_service: Session state manager
     
     Returns:
         tuple: (response_list, final_state_dict)
@@ -22,7 +39,7 @@ async def call_agent(runner, user_id, session_id, user_input, session_service):
                 if event.content and event.content.parts:
                     response.append(event.content.parts[0].text)
         
-        # After all events have been processed, get the fresh session state
+        # After all events, get the fresh session state
         updated_session = await session_service.get_session(
             user_id=user_id,
             app_name=runner.app_name,
