@@ -80,34 +80,62 @@ bg_design_agent = Agent(
         retry_options=retry_config,
     ),
     instruction="""
-    You are a Map Designer. Your task is to decide the size and environment of the battle ground for a D&D combat based on a given background story.
-    The battle ground is a grid and you need to decide the length and width of the grid.
-    Inside the battle ground, you need to pick a rectangle area with a special environment.
-    The environment has two types: 'SLOW' and 'DAMAGE'. You need to decide it based on the background story.
-    For example, a magma river is 'DAMAGE', but an ice/sand surface is 'SLOW'.
-    And you need to choose an emoji to represent that environment.
-    You also need to decide the start position of the user and the monster. You need to decide their positions based on the background story.
-    The top-left position of grid is (0, 0).
-
-    Things to do:
-    - Decide the length and width of the grid as a list, e.g [5, 5]
-    - Decide the top-left and bottom-right positions of the rectangle area, e.g [0, 1], [2, 3]
-    - Decide the environment type of the rectangle area, it should be EXACTLY 'SLOW' or 'DAMAGE'
-    - Decide the emoji to represent the environment, e.g 🔥 for fire, 🌊 for wave/water, etc.
-    - Decide the start position of the user, e.g [0, 2]
-    - Decide the start position of the monster, e.g [3, 4]
-
-    background story: {theme}
-
-    IMPORTANT: You response MUST be valid JSON matching this structure:
-    {
-    "size": [row, col],
-    "rectangle_position": [[r1, c1], [r2, c2]],
-    "environment": "The environment type of the rectangle area.",
-    "environment_emoji": "The emoji to represent the environment.",
+    You are a Map Designer. Your task is to create an interesting battle ground for a D&D combat based on a given background story.
+    The battle ground is a grid and you need to decide the size and place special terrain features.
+    
+    ## Terrain Generation
+    Instead of boring rectangles, create INTERESTING terrain patterns:
+    - **Walls/Barriers**: Create obstacles like walls, pillars, or barriers
+    - **Scattered Hazards**: Place dangerous areas strategically (not in blocks)
+    - **Paths/Corridors**: Create narrow passages or choke points
+    - **Central Features**: A hazardous area in the middle, or blocked pillars
+    
+    ## Terrain Types
+    You must choose ONE type:
+    - **BLOCKED**: Impassable terrain (walls, pillars, large rocks, trees). Characters cannot move through these positions.
+    - **DAMAGE**: Hazardous terrain (fire, acid, spikes, lava). Characters take 1d4 damage at end of turn if standing on it.
+    
+    ## Design Guidelines
+    - Grid size: 7x7 to 9x9 (rows x cols)
+    - Place 4-8 special terrain positions (not too many, not too few)
+    - Make patterns interesting: L-shapes, scattered positions, cross patterns, etc.
+    - Don't block direct path from user to monster completely
+    - Leave enough open space for combat movement
+    - User and monster should start 4-8 squares apart (Manhattan distance)
+    
+    ## Examples of Good Patterns
+    
+    **Example 1 - Central Pillar (BLOCKED)**:
+    Size: [7,7], Positions: [[3,3], [3,4], [4,3], [4,4]]
+    A 2x2 blocked area in center that players must navigate around
+    
+    **Example 2 - Scattered Fire (DAMAGE)**:
+    Size: [8,8], Positions: [[2,2], [2,5], [5,2], [5,5], [4,4]]
+    Fire pits scattered across the battlefield
+    
+    **Example 3 - Wall Barrier (BLOCKED)**:
+    Size: [7,8], Positions: [[2,3], [3,3], [4,3], [5,3]]
+    A vertical wall dividing the battlefield
+    
+    **Example 4 - L-Shape Hazard (DAMAGE)**:
+    Size: [8,7], Positions: [[3,2], [3,3], [3,4], [4,4], [5,4]]
+    An L-shaped dangerous area
+    
+    Background story: {theme}
+    
+    IMPORTANT: Your response MUST be valid JSON matching this structure:
+    {{
+    "size": [rows, cols],
+    "rectangle_position": [[r1, c1], [r2, c2], ...],
+    "environment": "BLOCKED or DAMAGE",
+    "environment_emoji": "Single emoji for the terrain",
     "user_position": [row, col],
     "monster_position": [row, col]
-    }
+    }}
+    
+    The "rectangle_position" field should contain a LIST of individual positions, NOT a rectangle definition.
+    Each position is [row, col]. Include 4-8 positions total.
+    Choose positions that create an interesting pattern based on the background story!
     """,
     output_key='battleground',
     output_schema=BattlegroundContent,

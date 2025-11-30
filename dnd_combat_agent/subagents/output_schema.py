@@ -10,8 +10,8 @@ class MonsterContent(BaseModel):
 
 class BattlegroundContent(BaseModel):
     size: list[int] = Field(description="The size of the battle ground grid.")
-    rectangle_position: list[list[int]] = Field(description="The top-left and bottom-right positions of the rectangle area.")
-    environment: str = Field(description="The environment type of the rectangle area.")
+    rectangle_position: list[list[int]] = Field(description="List of positions with special terrain. Each position is [row, col].")
+    environment: str = Field(description="The environment type: BLOCKED or DAMAGE.")
     environment_emoji: str = Field(description="The emoji to represent the environment.")
     user_position: list[int] = Field(description="The start position of the user.")
     monster_position: list[int] = Field(description="The start position of the monster.")

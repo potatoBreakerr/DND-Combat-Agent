@@ -89,25 +89,45 @@ check_in_range_tool = FunctionTool(check_in_range)
 def attack(source: str, target: str, tool_context: ToolContext) -> dict:
     """
     Performs an attack from source to target using D&D 5e mechanics.
-
+    Rolls a d20 for attack, compares to AC, rolls damage if hit.
+    For user attacks, checks and marks action as used.
+    
     Args:
         source: 'user' or 'monster'
         target: 'user' or 'monster'
-
+    
     Returns:
-        dict: Contains attack results including hit/miss, damage dealt, and combat log
+        dict: Attack result with hit/miss, damage, and updated HP
     """
-    # Get source and target attributes
+    # For user attacks, check if action is available
+    if 'user' in source.lower():
+        tracker = tool_context.state.get('turn_tracker', {})
+        action_used = tracker.get('action_used', False)
+        
+        if action_used:
+            return {
+                'success': False,
+                'message': 'You have already used your action this turn!',
+            }
+    
+    # Get source attributes
     if 'user' in source.lower():
         source_attributes = tool_context.state.get('user_attributes', {})
-        target_attributes = tool_context.state.get('monster', {})
         source_name = "You"
-        target_name = target_attributes.get('name', 'Monster')
     else:
         source_attributes = tool_context.state.get('monster', {})
-        target_attributes = tool_context.state.get('user_attributes', {})
         source_name = source_attributes.get('name', 'Monster')
+    
+    # Get target attributes
+    if 'user' in target.lower():
+        target_attributes = tool_context.state.get('user_attributes', {})
         target_name = "You"
+    else:
+        target_attributes = tool_context.state.get('monster', {})
+        target_name = target_attributes.get('name', 'Monster')
+    
+    # Get attack stats
+    damage_range = source_attributes.get('damage', [1, 6])
     
     # Check if in range (melee range = 1)
     range_check = check_in_range(source, target, 1, tool_context)
@@ -126,46 +146,45 @@ def attack(source: str, target: str, tool_context: ToolContext) -> dict:
     # Check if hit
     hit = attack_roll >= target_ac
     
-    if not hit:
-        return {
-            'success': True,
-            'hit': False,
-            'damage': 0,
-            'attack_roll': attack_roll,
-            'target_ac': target_ac,
-            'message': f"{source_name} attacks {target_name}! Rolled {attack_roll} vs AC {target_ac}. Miss!",
-        }
-    
-    # Calculate damage
-    damage_range = source_attributes.get('damage', [1, 6])
-    damage = random.randint(damage_range[0], damage_range[1])
-    
-    # Update target HP
+    damage = 0
+    new_hp = target_attributes.get('hp', 0)
     current_hp = target_attributes.get('hp', 0)
-    new_hp = max(0, current_hp - damage)
-    
-    # Update state - replace entire dict to ensure change is detected
-    if 'user' in target.lower():
-        user_attrs_copy = dict(target_attributes)
-        user_attrs_copy['hp'] = new_hp
-        tool_context.state['user_attributes'] = user_attrs_copy
-    else:
-        monster_copy = dict(target_attributes)
-        monster_copy['hp'] = new_hp
-        tool_context.state['monster'] = monster_copy
+
+    if hit:
+        # Calculate damage
+        damage = random.randint(damage_range[0], damage_range[1])
+        
+        # Update target HP
+        new_hp = max(0, current_hp - damage)
+        
+        # Update state - replace entire dict to ensure change is detected
+        if 'user' in target.lower():
+            user_attrs_copy = dict(target_attributes)
+            user_attrs_copy['hp'] = new_hp
+            tool_context.state['user_attributes'] = user_attrs_copy
+        else:
+            monster_copy = dict(target_attributes)
+            monster_copy['hp'] = new_hp
+            tool_context.state['monster'] = monster_copy
     
     critical = attack_roll == 20
     message = f"{source_name} attacks {target_name}! Rolled {attack_roll} vs AC {target_ac}. "
-    if critical:
-        message += f"CRITICAL HIT! Deals {damage} damage! "
+    
+    if hit:
+        message += f"Hit! Deals {damage} damage! {target_name}'s HP: {current_hp} → {new_hp}"
     else:
-        message += f"Hit! Deals {damage} damage! "
-    message += f"{target_name}'s HP: {current_hp} → {new_hp}"
+        message += "Miss!"
+    
+    # Mark action as used for user attacks
+    if 'user' in source.lower():
+        tracker_copy = dict(tool_context.state.get('turn_tracker', {}))
+        tracker_copy['action_used'] = True
+        tool_context.state['turn_tracker'] = tracker_copy
     
     return {
         'success': True,
-        'hit': True,
-        'damage': damage,
+        'hit': hit,
+        'damage': damage if hit else 0,
         'attack_roll': attack_roll,
         'target_ac': target_ac,
         'critical': critical,
@@ -227,20 +246,73 @@ def move_character(character: str, direction: str, tool_context: ToolContext) ->
             'message': f"{char_name} cannot move {direction} - out of bounds!",
         }
     
+    # Check if target position is BLOCKED terrain
+    environment = battleground.get('environment', '')
+    if environment == 'BLOCKED':
+        terrain_positions = battleground.get('rectangle_position', [])
+        # Check both old rectangle format and new list format
+        is_blocked = False
+        
+        if terrain_positions:
+            # Check if new_pos is in blocked terrain
+            if len(terrain_positions) == 2 and isinstance(terrain_positions[0], list):
+                # Could be old rectangle format or new list format
+                if (len(terrain_positions) == 2 and 
+                    terrain_positions[1][0] >= terrain_positions[0][0] and 
+                    terrain_positions[1][1] >= terrain_positions[0][1]):
+                    # Rectangle format
+                    top_left = terrain_positions[0]
+                    bottom_right = terrain_positions[1]
+                    if (top_left[0] <= new_pos[0] <= bottom_right[0] and 
+                        top_left[1] <= new_pos[1] <= bottom_right[1]):
+                        is_blocked = True
+                else:
+                    # List of positions
+                    if new_pos in terrain_positions:
+                        is_blocked = True
+            else:
+                # New list format
+                if new_pos in terrain_positions:
+                    is_blocked = True
+        
+        if is_blocked:
+            return {
+                'success': False,
+                'message': f"{char_name} cannot move there - blocked by terrain!",
+            }
+    
     # Check speed (movement distance)
     distance = abs(delta[0]) + abs(delta[1])
     speed = char_attributes.get('speed', 1)
     
-    if distance > speed:
-        return {
-            'success': False,
-            'message': f"{char_name} cannot move that far! Speed: {speed}, Distance: {distance}",
-        }
+    # For user movement, check turn tracker
+    if 'user' in character.lower():
+        tracker = tool_context.state.get('turn_tracker', {})
+        movement_used = tracker.get('movement_used', 0)
+        movement_remaining = speed - movement_used
+        
+        if distance > movement_remaining:
+            return {
+                'success': False,
+                'message': f"{char_name} cannot move {distance} squares! Only {movement_remaining} movement remaining this turn (used {movement_used}/{speed})",
+            }
+    else:
+        # Monster movement - just check against speed
+        if distance > speed:
+            return {
+                'success': False,
+                'message': f"{char_name} cannot move that far! Speed: {speed}, Distance: {distance}",
+            }
     
     # Update position - replace the entire battleground to ensure change is detected
     battleground_copy = dict(battleground)  # Shallow copy is fine for top-level dict
     if 'user' in character.lower():
         battleground_copy['user_position'] = new_pos
+        
+        # Update movement tracker for user
+        tracker_copy = dict(tool_context.state.get('turn_tracker', {}))
+        tracker_copy['movement_used'] = tracker_copy.get('movement_used', 0) + distance
+        tool_context.state['turn_tracker'] = tracker_copy
     else:
         battleground_copy['monster_position'] = new_pos
     
@@ -250,6 +322,7 @@ def move_character(character: str, direction: str, tool_context: ToolContext) ->
         'success': True,
         'old_position': current_pos,
         'new_position': new_pos,
+        'distance_moved': distance,
         'message': f"{char_name} moves {direction} from {current_pos} to {new_pos}",
     }
 
@@ -257,15 +330,18 @@ move_character_tool = FunctionTool(move_character)
 
 def apply_terrain_effects(character: str, tool_context: ToolContext) -> dict:
     """
-    Applies terrain effects to a character based on their position.
-
+    Applies terrain effects to a character if they're standing on special terrain.
+    Only applies to DAMAGE terrain (e.g., fire, lava, acid).
+    BLOCKED terrain prevents movement but doesn't deal damage.
+    
     Args:
         character: 'user' or 'monster'
-
+    
     Returns:
-        dict: Contains effects applied and message
+        dict: Effects applied and updated HP if any
     """
     battleground = tool_context.state.get('battleground', {})
+    environment = battleground.get('environment', '')
     
     # Get character position
     if 'user' in character.lower():
@@ -277,31 +353,58 @@ def apply_terrain_effects(character: str, tool_context: ToolContext) -> dict:
         char_attributes = tool_context.state.get('monster', {})
         char_name = char_attributes.get('name', 'Monster')
     
-    # Check if in special terrain
-    rect_pos = battleground.get('rectangle_position', [[0, 0], [0, 0]])
-    top_left = rect_pos[0]
-    bottom_right = rect_pos[1]
+    # Check if character is on special terrain
+    terrain_positions = battleground.get('rectangle_position', [])
+    is_on_terrain = False
     
-    in_terrain = (top_left[0] <= char_pos[0] <= bottom_right[0] and 
-                  top_left[1] <= char_pos[1] <= bottom_right[1])
+    if terrain_positions:
+        # Check both old rectangle format and new list format
+        if len(terrain_positions) == 2 and isinstance(terrain_positions[0], list):
+            # Could be rectangle or list
+            if (terrain_positions[1][0] >= terrain_positions[0][0] and 
+                terrain_positions[1][1] >= terrain_positions[0][1]):
+                # Rectangle format
+                top_left = terrain_positions[0]
+                bottom_right = terrain_positions[1]
+                if (top_left[0] <= char_pos[0] <= bottom_right[0] and 
+                    top_left[1] <= char_pos[1] <= bottom_right[1]):
+                    is_on_terrain = True
+            else:
+                # List of positions
+                if char_pos in terrain_positions:
+                    is_on_terrain = True
+        else:
+            # New list format
+            if char_pos in terrain_positions:
+                is_on_terrain = True
     
-    if not in_terrain:
+    if not is_on_terrain:
         return {
             'in_terrain': False,
             'effects': [],
-            'message': f"{char_name} is on normal ground - no terrain effects",
+            'message': f'{char_name} is on normal ground - no terrain effects'
         }
     
-    environment = battleground.get('environment', '')
-    environment_emoji = battleground.get('environment_emoji', '')
+    # Apply effects based on terrain type
     effects = []
+    environment_emoji = battleground.get('environment_emoji', '')
     
-    if environment == 'DAMAGE':
+    if environment == 'BLOCKED':
+        # BLOCKED terrain doesn't deal damage, just blocks movement
+        return {
+            'in_terrain': True,
+            'environment': 'BLOCKED',
+            'effects': [],
+            'message': f'{char_name} is on blocked terrain (no damage)'
+        }
+    
+    elif environment == 'DAMAGE':
+        # Roll 1d4 damage
         damage = random.randint(1, 4)
         current_hp = char_attributes.get('hp', 0)
         new_hp = max(0, current_hp - damage)
         
-        # Update state - replace entire dict to ensure change is detected
+        # Update HP - replace entire dict to ensure change is detected
         if 'user' in character.lower():
             user_attrs_copy = dict(char_attributes)
             user_attrs_copy['hp'] = new_hp
@@ -311,22 +414,22 @@ def apply_terrain_effects(character: str, tool_context: ToolContext) -> dict:
             monster_copy['hp'] = new_hp
             tool_context.state['monster'] = monster_copy
         
-        effects.append(f"DAMAGE: {damage} damage from terrain")
-        message = f"{char_name} takes {damage} damage from {environment_emoji} terrain! HP: {current_hp} → {new_hp}"
-    
-    elif environment == 'SLOW':
-        effects.append("SLOW: Movement reduced")
-        message = f"{char_name} is slowed by {environment_emoji} terrain! Movement may be hindered next turn"
+        effects.append(f'DAMAGE: {damage} damage from terrain')
+        
+        return {
+            'in_terrain': True,
+            'environment': 'DAMAGE',
+            'effects': effects,
+            'message': f'{char_name} takes {damage} damage from {environment_emoji} terrain! HP: {current_hp} → {new_hp}'
+        }
     
     else:
-        message = f"{char_name} is in special terrain {environment_emoji}"
-    
-    return {
-        'in_terrain': True,
-        'environment': environment,
-        'effects': effects,
-        'message': message,
-    }
+        return {
+            'in_terrain': True,
+            'environment': environment,
+            'effects': [],
+            'message': f'{char_name} is on {environment} terrain'
+        }
     
 apply_terrain_effects_tool = FunctionTool(apply_terrain_effects)
 
@@ -437,3 +540,89 @@ def get_available_actions(character: str, tool_context: ToolContext) -> dict:
     }
 
 get_available_actions_tool = FunctionTool(get_available_actions)
+
+
+# ============================================================
+# TURN TRACKING TOOLS - Action Economy System
+# ============================================================
+
+def reset_turn(tool_context: ToolContext) -> dict:
+    """
+    Reset action tracking at the start of the user's turn.
+    Clears movement used, action used, and bonus action used.
+    
+    Returns:
+        dict: Confirmation message
+    """
+    # Initialize turn tracker if it doesn't exist
+    if 'turn_tracker' not in tool_context.state:
+        tool_context.state['turn_tracker'] = {}
+    
+    # Reset all action tracking
+    tracker_copy = dict(tool_context.state.get('turn_tracker', {}))
+    tracker_copy['current_turn'] = 'user'
+    tracker_copy['movement_used'] = 0
+    tracker_copy['action_used'] = False
+    tracker_copy['bonus_action_used'] = False
+    
+    tool_context.state['turn_tracker'] = tracker_copy
+    
+    return {
+        'success': True,
+        'message': 'User turn started. All actions reset.',
+        'turn_tracker': tracker_copy
+    }
+
+reset_turn_tool = FunctionTool(reset_turn)
+
+
+def check_turn_status(tool_context: ToolContext) -> dict:
+    """
+    Check what actions are still available in the current turn.
+    
+    Returns:
+        dict: Available movement, action, and bonus action status
+    """
+    tracker = tool_context.state.get('turn_tracker', {})
+    user_attributes = tool_context.state.get('user_attributes', {})
+    
+    movement_used = tracker.get('movement_used', 0)
+    action_used = tracker.get('action_used', False)
+    bonus_action_used = tracker.get('bonus_action_used', False)
+    
+    max_movement = user_attributes.get('speed', 2)
+    movement_remaining = max(0, max_movement - movement_used)
+    
+    return {
+        'current_turn': tracker.get('current_turn', 'user'),
+        'movement_remaining': movement_remaining,
+        'movement_used': movement_used,
+        'max_movement': max_movement,
+        'action_available': not action_used,
+        'bonus_action_available': not bonus_action_used,
+        'message': f"Movement: {movement_remaining}/{max_movement} | Action: {'Available' if not action_used else 'Used'} | Bonus: {'Available' if not bonus_action_used else 'Used'}"
+    }
+
+check_turn_status_tool = FunctionTool(check_turn_status)
+
+
+def end_user_turn(tool_context: ToolContext) -> dict:
+    """
+    Mark the user's turn as complete and switch to monster turn.
+    This indicates the monster should now take its full turn.
+    
+    Returns:
+        dict: Confirmation that turn has ended
+    """
+    tracker_copy = dict(tool_context.state.get('turn_tracker', {}))
+    tracker_copy['current_turn'] = 'monster'
+    
+    tool_context.state['turn_tracker'] = tracker_copy
+    
+    return {
+        'success': True,
+        'turn_switched': True,
+        'message': 'User turn ended. Monster turn begins.'
+    }
+
+end_user_turn_tool = FunctionTool(end_user_turn)

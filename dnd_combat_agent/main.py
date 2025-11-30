@@ -90,6 +90,25 @@ async def main():
         monster['monster_emoji']
     )
     
+    # Initialize turn tracker for action economy
+    if not initial_state:
+        # Fallback if state wasn't returned
+        updated_session = await session_service.get_session(
+            user_id=USER_ID,
+            app_name=APP_NAME,
+            session_id=SESSION_ID,
+        )
+        initial_state = updated_session.state
+    
+    # Initialize turn tracker in state (will be updated via tools)
+    if 'turn_tracker' not in initial_state:
+        initial_state['turn_tracker'] = {
+            'current_turn': 'user',
+            'movement_used': 0,
+            'action_used': False,
+            'bonus_action_used': False,
+        }
+    
     # Display initial combat state
     display_combat_state(
         initial_state.get('user_attributes', {}),
@@ -97,11 +116,24 @@ async def main():
         initial_state.get('battleground', {})
     )
     
-    print("\n📖 Combat Instructions:")
-    print("  - Move: 'move north/south/east/west' or diagonal 'move northeast/northwest/southeast/southwest'")
-    print("  - Attack: 'attack' (you must be adjacent to the monster)")
-    print("  - Status: 'status' (check current battle state)")
-    print("  - Quit: 'quit' or 'exit'\n")
+    print("\n📖 Turn-Based Combat Instructions:")
+    print("  ⚡ YOU CAN TAKE MULTIPLE ACTIONS PER TURN!")
+    print("  ")
+    print("  Actions available each turn:")
+    print("    - Movement: up to your speed (2 squares)")
+    print("    - Action: attack or other actions (once per turn)")
+    print("    - Bonus Action: (coming soon)")
+    print("  ")
+    print("  Commands:")
+    print("    • 'move north/south/east/west' - Move in a direction")
+    print("    • 'attack' - Attack if adjacent to monster")
+    print("    • 'end turn' - Finish your turn (monster will act)")
+    print("    • 'status' - Check current battle state")
+    print("    • 'quit' - Exit combat")
+    print("  ")
+    print("  💡 TIP: You can move AND attack in the same turn!")
+    print("      Example: 'move north' → 'attack' → 'end turn'")
+    print("\n" + "="*70 + "\n")
     
     # Combat loop - now using root agent for all interactions
     combat_active = True

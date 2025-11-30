@@ -41,7 +41,7 @@ def show_battle_ground(size: list[int], rectangle_position: list[list[int]], env
     
     Args:
         size: [rows, cols]
-        rectangle_position: [[r1, c1], [r2, c2]] (Top-Left, Bottom-Right)
+        rectangle_position: List of [row, col] positions with special terrain
         environment_emoji: environment emoji
         user_position: [r, c]
         monster_position: [r, c]
@@ -51,19 +51,38 @@ def show_battle_ground(size: list[int], rectangle_position: list[list[int]], env
     # Initialize grid with dots for normal ground
     grid = [[' .' for _ in range(cols)] for _ in range(rows)]
     
-    # Fill special terrain area
-    if rectangle_position and len(rectangle_position) == 2:
-        top_left = rectangle_position[0]
-        bottom_right = rectangle_position[1]
-        
-        r_start = max(0, top_left[0])
-        r_end = min(rows - 1, bottom_right[0])
-        c_start = max(0, top_left[1])
-        c_end = min(cols - 1, bottom_right[1])
+    # Fill special terrain positions (now supports list of positions)
+    if rectangle_position:
+        # Check if it's a list of positions or old rectangle format
+        if len(rectangle_position) == 2 and isinstance(rectangle_position[0], list) and len(rectangle_position[0]) == 2 and len(rectangle_position) == 2:
+            # Old rectangle format: [[r1, c1], [r2, c2]]
+            # Check if it looks like a rectangle (second position is bottom-right)
+            if rectangle_position[1][0] >= rectangle_position[0][0] and rectangle_position[1][1] >= rectangle_position[0][1]:
+                # Treat as rectangle
+                top_left = rectangle_position[0]
+                bottom_right = rectangle_position[1]
+                
+                r_start = max(0, top_left[0])
+                r_end = min(rows - 1, bottom_right[0])
+                c_start = max(0, top_left[1])
+                c_end = min(cols - 1, bottom_right[1])
 
-        for r in range(r_start, r_end + 1):
-            for c in range(c_start, c_end + 1):
-                grid[r][c] = environment_emoji
+                for r in range(r_start, r_end + 1):
+                    for c in range(c_start, c_end + 1):
+                        grid[r][c] = environment_emoji
+            else:
+                # Treat as list of two positions
+                for pos in rectangle_position:
+                    r, c = pos
+                    if 0 <= r < rows and 0 <= c < cols:
+                        grid[r][c] = environment_emoji
+        else:
+            # New format: list of individual positions
+            for pos in rectangle_position:
+                if isinstance(pos, list) and len(pos) == 2:
+                    r, c = pos
+                    if 0 <= r < rows and 0 <= c < cols:
+                        grid[r][c] = environment_emoji
 
     # Place Monster (overwrites terrain)
     if 0 <= monster_position[0] < rows and 0 <= monster_position[1] < cols:
