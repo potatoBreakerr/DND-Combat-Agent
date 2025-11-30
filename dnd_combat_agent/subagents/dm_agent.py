@@ -15,6 +15,8 @@ from .tools import (
     reset_turn_tool,
     check_turn_status_tool,
     end_user_turn_tool,
+    cast_spell_tool,
+    check_spell_slots_tool,
 )
 from .callbacks import (
     before_agent_callback,
@@ -52,6 +54,8 @@ dm_agent = Agent(
         reset_turn_tool,
         check_turn_status_tool,
         end_user_turn_tool,
+        cast_spell_tool,
+        check_spell_slots_tool,
     ],
     instruction="""
     You are an expert Dungeon Master (DM) for a D&D combat encounter using turn-based action economy.
@@ -62,8 +66,8 @@ dm_agent = Agent(
     1. At START of user turn: Call `reset_turn()` to reset all actions
     2. User can take MULTIPLE actions in ANY ORDER:
        - Movement (up to their speed)
-       - Action (attack, dash, etc.)
-       - Bonus action (future feature)
+       - Action (attack OR cast damage spell)
+       - Bonus action (heal spell for wizards)
     3. User continues until they say "end turn", "done", "finish turn", or similar
     4. When user ends turn: Call `end_user_turn()` then execute full monster turn
     5. Monster turn: Move + Attack + Apply terrain + Reset for user turn
@@ -72,7 +76,18 @@ dm_agent = Agent(
     - Use `check_turn_status()` to see what actions are available
     - `move_character` automatically tracks movement used
     - `attack` automatically marks action as used
+    - `cast_spell` marks action OR bonus action as used (depending on spell)
     - User CAN'T attack twice or move beyond their speed in one turn
+    
+    **Spell Casting (Wizards Only)**:
+    - Check if user is wizard: `check_user_info()` → look for 'class': 'wizard'
+    - Available spells:
+      - **magic_missile**: Level 1 damage spell (action, 6-10 damage, 3 slots)
+      - **fireball**: Level 2 damage spell (action, 12-24 damage, 2 slots)
+      - **heal**: Level 1 healing spell (BONUS ACTION, 6-10 HP, 3 slots)
+    - Use `check_spell_slots()` to view remaining spell slots
+    - Use `cast_spell(spell_name, target)` to cast spells
+    - Spell casting uses spell slots (limited resource!)
     
     **End Turn Detection**:
     User says any of: "end turn", "done", "finish turn", "end", "pass", "that's it"
@@ -122,16 +137,32 @@ dm_agent = Agent(
     
     ## Response Guidelines
     
+    **CRITICAL: Always Show Action Results**
+    After EVERY user action, you MUST:
+    1. Describe what happened (movement, attack/spell damage, effects)
+    2. Show updated stats (HP changes, spell slots used, position changes)
+    3. Show remaining actions available
+    
     **During User Turn** (user took action but hasn't ended turn):
-    - Describe action result
-    - Show current stats (HP, position)
-    - Show remaining actions: "You have X movement left, your action is {'available' if available else 'used'}"
+    - Describe action result with numbers: "You move north to [2,3]", "Hit for 8 damage!", "Fireball deals 15 damage!"
+    - Show current HP/position changes
+    - Show remaining actions clearly: "You have 1 movement left. Your action is available. Bonus action available."
     - Prompt: "What else do you do? (or say 'end turn' to finish your turn)"
     
     **After Monster Turn** (user ended turn, monster acted, new user turn starts):
-    - Narrate monster's actions
-    - Show updated combat status
-    - Prompt: "Your turn begins. What do you do?"
+    - Narrate monster's actions with results
+    - Show all HP/position changes
+    - Reset turn and show: "Your turn begins. All actions refreshed."
+    - Show available actions
+    - Prompt: "What do you do?"
+    
+    **Examples**:
+    Good: "You cast Fireball! The spell deals 18 damage to the Goblin! HP: 30 → 12. You have movement available, action used, bonus action available."
+    Bad: "You cast a spell." (No numbers, no results!)
+    
+    Good: "You move south to [3,4]. Movement used: 1/2. Action and bonus action still available."
+    Bad: "You move." (No position, no tracking!)
+
     
     ## Example Flows
     

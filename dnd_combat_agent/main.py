@@ -11,8 +11,33 @@ load_dotenv()
 
 
 async def main():
-    user_class = 'fighter'
+    print("\n" + "="*70)
+    print("🎮 D&D COMBAT AGENT")
+    print("="*70)
+    
+    print("\n🎲 Welcome to the D&D Combat Arena!")
+    print("Let's start by choosing your character class...\n")
+    
+    # Class selection
+    print("Available classes:")
+    print("  1. Fighter - High HP, strong attacks, heavy armor")
+    print("  2. Wizard - Spell casting, ranged attacks, lower HP\n")
+    
+    user_class = ''
+    while user_class not in ['fighter', 'wizard', '1', '2']:
+        choice = input("Choose your class (fighter/wizard or 1/2): ").strip().lower()
+        if choice in ['1', 'fighter']:
+            user_class = 'fighter'
+        elif choice in ['2', 'wizard']:
+            user_class = 'wizard'
+        else:
+            print("Invalid choice. Please enter 'fighter', 'wizard', '1', or '2'")
+    
+    print(f"\n⚔️ You have chosen: {user_class.upper()}!")
+    
     user_attributes = create_character(user_class)
+    
+    print("Generating your battle scenario...\n")
 
     session_service = InMemorySessionService()
 
@@ -42,43 +67,27 @@ async def main():
         session_service=session_service,
     )
 
-    print('\n' + '='*70)
-    print('🎮 D&D COMBAT AGENT')
-    print('='*70)
-    print('\n🎲 Welcome to the D&D Combat Arena!')
-    print('Let\'s start by generating your battle scenario...\n')
-
-    # Initialize battle using root agent
+    # Generate battle scenario
     response, initial_state = await call_agent(
         runner=root_runner,
         session_id=SESSION_ID,
         user_id=USER_ID,
-        user_input="Generate a D&D combat theme and initialize a new battle.",
-        session_service=session_service
+        user_input="Generate a D&D combat theme.",
+        session_service=session_service,
     )
 
-    # Use the returned state directly instead of fetching
-    if not initial_state:
-        # Fallback to get_session if state wasn't returned
-        updated_session = await session_service.get_session(
-            user_id=USER_ID,
-            app_name=APP_NAME,
-            session_id=SESSION_ID,
-        )
-        initial_state = updated_session.state
+    # Extract battle information
+    theme = initial_state.get('theme', '')
+    monster = initial_state.get('monster', {})
+    battle_ground = initial_state.get('battleground', {})
 
-    battle_ground = initial_state.get('battleground')
-    monster = initial_state.get('monster')
-    theme = initial_state.get('theme')
-
-    if not battle_ground or not monster:
-        print("⚠️  Failed to initialize battle. Please try again.")
+    if not theme or not monster or not battle_ground:
+        print("Error: Failed to generate battle scenario")
         return
 
     print(f'\n🎭 Background Story:\n{theme}\n')
     print('\n' + '='*70)
     print('⚔️  BATTLE BEGINS!')
-    print('='*70)
     
     # Show initial battleground
     show_battle_ground(
@@ -121,18 +130,30 @@ async def main():
     print("  ")
     print("  Actions available each turn:")
     print("    - Movement: up to your speed (2 squares)")
-    print("    - Action: attack or other actions (once per turn)")
-    print("    - Bonus Action: (coming soon)")
+    print("    - Action: attack or cast spell (once per turn)")
+    if user_class == 'wizard':
+        print("    - Bonus Action: cast heal spell")
+    else:
+        print("    - Bonus Action: (coming soon)")
     print("  ")
     print("  Commands:")
     print("    • 'move north/south/east/west' - Move in a direction")
     print("    • 'attack' - Attack if adjacent to monster")
+    if user_class == 'wizard':
+        print("    • 'cast magic_missile' - Cast Magic Missile (level 1 spell)")
+        print("    • 'cast fireball' - Cast Fireball (level 2 spell)")
+        print("    • 'cast heal' - Heal yourself (bonus action)")
+        print("    • 'check spells' - View spell slots")
     print("    • 'end turn' - Finish your turn (monster will act)")
     print("    • 'status' - Check current battle state")
     print("    • 'quit' - Exit combat")
     print("  ")
-    print("  💡 TIP: You can move AND attack in the same turn!")
-    print("      Example: 'move north' → 'attack' → 'end turn'")
+    if user_class == 'wizard':
+        print("  💡 TIP: Use heal as a bonus action after attacking!")
+        print("      Example: 'cast fireball' → 'cast heal' → 'end turn'")
+    else:
+        print("  💡 TIP: You can move AND attack in the same turn!")
+        print("      Example: 'move north' → 'attack' → 'end turn'")
     print("\n" + "="*70 + "\n")
     
     # Combat loop - now using root agent for all interactions
@@ -193,17 +214,18 @@ async def main():
                 current_state.get('battleground', {})
             )
         
-        # Check if combat ended
-        user_hp = current_state.get('user_attributes', {}).get('hp', 0)
-        monster_hp = current_state.get('monster', {}).get('hp', 0)
+        # Check combat status
+        combat_status = current_state.get('combat_status', 'ongoing')
         
-        if user_hp <= 0:
-            print("\n💀 DEFEAT! You have been slain in battle!")
-            combat_active = False
-        elif monster_hp <= 0:
-            monster_name = updated_session.state.get('monster', {}).get('name', 'the monster')
-            print(f"\n🎉 VICTORY! You have defeated {monster_name}!")
-            combat_active = False
+        if combat_status == 'user_won':
+            monster_name = current_state.get('monster', {}).get('name', 'the monster')
+            print(f"\n🎉 Congratulations! You have defeated {monster_name}!")
+            print("=" * 70)
+            break
+        elif combat_status == 'monster_won':
+            print("\n💀 You have been defeated!")
+            print("=" * 70)
+            break
 
     
 

@@ -626,3 +626,186 @@ def end_user_turn(tool_context: ToolContext) -> dict:
     }
 
 end_user_turn_tool = FunctionTool(end_user_turn)
+
+
+# ============================================================
+# SPELL CASTING TOOLS
+# ============================================================
+
+def cast_spell(spell_name: str, target: str, tool_context: ToolContext) -> dict:
+    """
+    Cast a spell. Available spells: magic_missile (level 1), fireball (level 2), heal (level 1 bonus action).
+    
+    Args:
+        spell_name: Name of spell ('magic_missile', 'fireball', 'heal')
+        target: 'user' or 'monster' (heal targets user, damage spells target monster)
+    
+    Returns:
+        dict: Spell result including damage/healing and spell slot usage
+    """
+    user_attributes = tool_context.state.get('user_attributes', {})
+    
+    # Check if user is a wizard
+    if user_attributes.get('class') != 'wizard':
+        return {
+            'success': False,
+            'message': 'Only wizards can cast spells!'
+        }
+    
+    spell_name = spell_name.lower()
+    
+    # Check if spell is known
+    spells_known = user_attributes.get('spells_known', [])
+    if spell_name not in spells_known:
+        return {
+            'success': False,
+            'message': f'Spell "{spell_name}" is not known!'
+        }
+    
+    # Define spell properties
+    spell_data = {
+        'magic_missile': {
+            'level': 1,
+            'type': 'damage',
+            'damage': [6, 10],  # 2d4+2 ≈ 6-10 damage
+            'action_type': 'action',
+            'description': 'Three glowing darts of magical force'
+        },
+        'fireball': {
+            'level': 2,
+            'type': 'damage',
+            'damage': [12, 24],  # 8d6 ≈ 12-24 damage
+            'action_type': 'action',
+            'description': 'A bright streak flashes to a point and blossoms into an explosion of flame'
+        },
+        'heal': {
+            'level': 1,
+            'type': 'heal',
+            'healing': [6, 10],  # 2d4+2
+            'action_type': 'bonus_action',
+            'description': 'Healing energy radiates from your hands'
+        }
+    }
+    
+    if spell_name not in spell_data:
+        return {
+            'success': False,
+            'message': f'Unknown spell: {spell_name}'
+        }
+    
+    spell = spell_data[spell_name]
+    spell_level = spell['level']
+    
+    # Check spell slots
+    spell_slots = user_attributes.get('spell_slots', {})
+    slot_key = f'level_{spell_level}'
+    slots_remaining = spell_slots.get(slot_key, 0)
+    
+    if slots_remaining <= 0:
+        return {
+            'success': False,
+            'message': f'No level {spell_level} spell slots remaining!'
+        }
+    
+    # Check action economy
+    tracker = tool_context.state.get('turn_tracker', {})
+    
+    if spell['action_type'] == 'action':
+        if tracker.get('action_used', False):
+            return {
+                'success': False,
+                'message': 'You have already used your action this turn!'
+            }
+    elif spell['action_type'] == 'bonus_action':
+        if tracker.get('bonus_action_used', False):
+            return {
+                'success': False,
+                'message': 'You have already used your bonus action this turn!'
+            }
+    
+    # Cast the spell!
+    result_message = ""
+    
+    if spell['type'] == 'damage':
+        # Damage spell
+        monster = tool_context.state.get('monster', {})
+        damage = random.randint(spell['damage'][0], spell['damage'][1])
+        current_hp = monster.get('hp', 0)
+        new_hp = max(0, current_hp - damage)
+        
+        # Update monster HP
+        monster_copy = dict(monster)
+        monster_copy['hp'] = new_hp
+        tool_context.state['monster'] = monster_copy
+        
+        monster_name = monster.get('name', 'Monster')
+        result_message = f"You cast {spell_name.replace('_', ' ').title()}! {spell['description']}. Deals {damage} damage to {monster_name}! HP: {current_hp} → {new_hp}"
+        
+    elif spell['type'] == 'heal':
+        # Healing spell
+        healing = random.randint(spell['healing'][0], spell['healing'][1])
+        current_hp = user_attributes.get('hp', 0)
+        max_hp = user_attributes.get('max_hp', current_hp + 10)  # Estimate max HP
+        new_hp = min(max_hp, current_hp + healing)
+        actual_healing = new_hp - current_hp
+        
+        # Update user HP
+        user_attrs_copy = dict(user_attributes)
+        user_attrs_copy['hp'] = new_hp
+        tool_context.state['user_attributes'] = user_attrs_copy
+        
+        result_message = f"You cast Heal! {spell['description']}.  You heal {actual_healing} HP! HP: {current_hp} → {new_hp}"
+    
+    # Use spell slot
+    user_attrs_copy = dict(tool_context.state.get('user_attributes', {}))
+    spell_slots_copy = dict(user_attrs_copy.get('spell_slots', {}))
+    spell_slots_copy[slot_key] = slots_remaining - 1
+    user_attrs_copy['spell_slots'] = spell_slots_copy
+    tool_context.state['user_attributes'] = user_attrs_copy
+    
+    # Mark action/bonus action as used
+    tracker_copy = dict(tracker)
+    if spell['action_type'] == 'action':
+        tracker_copy['action_used'] = True
+    elif spell['action_type'] == 'bonus_action':
+        tracker_copy['bonus_action_used'] = True
+    tool_context.state['turn_tracker'] = tracker_copy
+    
+    return {
+        'success': True,
+        'spell_name': spell_name,
+        'spell_level': spell_level,
+        'action_type': spell['action_type'],
+        'slots_remaining': slots_remaining - 1,
+        'message': result_message
+    }
+
+cast_spell_tool = FunctionTool(cast_spell)
+
+
+def check_spell_slots(tool_context: ToolContext) -> dict:
+    """
+    Check remaining spell slots for wizard.
+    
+    Returns:
+        dict: Spell slots remaining
+    """
+    user_attributes = tool_context.state.get('user_attributes', {})
+    
+    if user_attributes.get('class') != 'wizard':
+        return {
+            'is_wizard': False,
+            'message': 'Not a wizard - no spell slots'
+        }
+    
+    spell_slots = user_attributes.get('spell_slots', {})
+    spells_known = user_attributes.get('spells_known', [])
+    
+    return {
+        'is_wizard': True,
+        'spell_slots': spell_slots,
+        'spells_known': spells_known,
+        'message': f"Spell slots: Level 1: {spell_slots.get('level_1', 0)}, Level 2: {spell_slots.get('level_2', 0)}"
+    }
+
+check_spell_slots_tool = FunctionTool(check_spell_slots)

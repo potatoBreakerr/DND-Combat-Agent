@@ -103,57 +103,110 @@ def show_battle_ground(size: list[int], rectangle_position: list[list[int]], env
 
 
 def create_character(_class: str):
-    if _class == 'fighter':
+    """
+    Creates character attributes based on class.
+    
+    Args:
+        _class: 'fighter' or 'wizard'
+    
+    Returns:
+        dict: Character attributes including hp, ac, speed, damage, and spell slots for wizard
+    """
+    if _class.lower() == 'fighter':
+        hp = random.randint(15, 25)
         user_attributes = {
-            'hp': random.randint(15, 25),
+            'class': 'fighter',
+            'hp': hp,
+            'max_hp': hp,  # Store max HP
             'ac': 13,
             'speed': 2,
             'damage': [7, 10],
         }
-        return user_attributes
+    elif _class.lower() == 'wizard':
+        hp = random.randint(10, 18)
+        user_attributes = {
+            'class': 'wizard',
+            'hp': hp,
+            'max_hp': hp,  # Store max HP
+            'ac': 11,  # Lower AC (no armor)
+            'speed': 2,
+            'damage': [4, 7],  # Lower melee damage
+            'spell_slots': {
+                'level_1': 3,  # 3 level 1 spell slots
+                'level_2': 2,  # 2 level 2 spell slots
+            },
+            'max_spell_slots': {  # Store max for display
+                'level_1': 3,
+                'level_2': 2,
+            },
+            'spells_known': ['magic_missile', 'fireball', 'heal']
+        }
     else:
-        print('Error in create_character: Unsupported class!')
+        # Default to fighter
+        hp = random.randint(15, 25)
+        user_attributes = {
+            'class': 'fighter',
+            'hp': hp,
+            'max_hp': hp,
+            'ac': 13,
+            'speed': 2,
+            'damage': [7, 10],
+        }
+    
+    return user_attributes
 
 def display_combat_state(user_attributes: dict, monster: dict, battleground: dict):
     """
-    Displays the current combat state including HP, positions, and terrain info.
-    
-    Args:
-        user_attributes: User's attributes dictionary
-        monster: Monster's attributes dictionary  
-        battleground: Battleground state dictionary
+    Displays the current combat state including HP, positions, spell slots, and terrain info.
     """
-    print("-"*50)
-    print("COMBAT STATUS")
-    print("-"*50)
-    
-    # User status
-    user_hp = user_attributes.get('hp', 0)
-    user_ac = user_attributes.get('ac', 0)
+    # Get positions
     user_pos = battleground.get('user_position', [0, 0])
-    print(f"🧙 YOU        | HP: {user_hp:>3} | AC: {user_ac:>2} | Position: {user_pos}")
+    monster_pos = battleground.get('monster_position', [0, 0])
+    
+    # Calculate distance
+    distance = abs(user_pos[0] - monster_pos[0]) + abs(user_pos[1] - monster_pos[1])
+    
+    # Get terrain info
+    environment = battleground.get('environment', 'Normal')
+    environment_emoji = battleground.get('environment_emoji', '')
+    
+    # Get user class
+    user_class = user_attributes.get('class', 'fighter')
+    
+    print()
+    print("-" * 60)
+    print("COMBAT STATUS")
+    print("-" * 60)
+    
+    # User status with max HP
+    user_hp = user_attributes.get('hp', 0)
+    user_max_hp = user_attributes.get('max_hp', user_hp)
+    print(f"🧙 YOU ({user_class.upper()})")
+    print(f"   HP: {user_hp}/{user_max_hp} | AC: {user_attributes.get('ac', 0)} | Position: {user_pos}")
+    
+    # Show spell slots for wizard
+    if user_class == 'wizard':
+        spell_slots = user_attributes.get('spell_slots', {})
+        max_slots = user_attributes.get('max_spell_slots', spell_slots)
+        lv1 = spell_slots.get('level_1', 0)
+        lv1_max = max_slots.get('level_1', 3)
+        lv2 = spell_slots.get('level_2', 0)
+        lv2_max = max_slots.get('level_2', 2)
+        print(f"   Spell Slots: Lv1: {lv1}/{lv1_max} | Lv2: {lv2}/{lv2_max}")
+    
+    print()
     
     # Monster status
-    monster_hp = monster.get('hp', 0)
-    monster_ac = monster.get('ac', 0)
     monster_name = monster.get('name', 'Monster')
     monster_emoji = monster.get('monster_emoji', '👾')
-    monster_pos = battleground.get('monster_position', [0, 0])
-    print(f"{monster_emoji} {monster_name:<10} | HP: {monster_hp:>3} | AC: {monster_ac:>2} | Position: {monster_pos}")
+    print(f"{monster_emoji} {monster_name.upper()}")
+    print(f"   HP: {monster.get('hp', 0)} | AC: {monster.get('ac', 0)} | Position: {monster_pos}")
     
-    # Distance
-    distance = abs(user_pos[0] - monster_pos[0]) + abs(user_pos[1] - monster_pos[1])
-    print(f"\nDistance: {distance} squares", end="")
-    
-    # Terrain info
-    environment = battleground.get('environment', 'None')
-    environment_emoji = battleground.get('environment_emoji', '')
-    if environment and environment != 'None':
-        print(f" | Terrain: {environment_emoji} {environment}")
-    else:
-        print()
-    
-    print("-"*50 + "\n")
+    print()
+    print(f"Distance: {distance} squares | Terrain: {environment_emoji} {environment}")
+    print("-" * 60)
+    print()
+
 
 def roll_dice(num_dice: int, dice_sides: int) -> int:
     """
